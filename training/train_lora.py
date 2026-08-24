@@ -93,7 +93,7 @@ def main() -> None:
         learning_rate=args.lr,
         per_device_train_batch_size=args.per_device_batch_size,
         gradient_accumulation_steps=args.grad_accum,
-        max_seq_length=args.max_seq_len,
+        max_length=args.max_seq_len,
         logging_steps=10,
         eval_strategy="epoch",
         save_strategy="epoch",
