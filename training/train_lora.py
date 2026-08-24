@@ -17,6 +17,7 @@ you don't have a local GPU.
 
 import argparse
 
+import torch
 from datasets import load_dataset
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import (
@@ -56,12 +57,17 @@ def main() -> None:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # bf16 needs Ampere+ (compute capability 8.0+, e.g. A100) - older cards
+    # like a T4 (Turing, 7.5) only support fp16. Detect instead of assuming.
+    use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+    compute_dtype = torch.bfloat16 if use_bf16 else torch.float16
+
     quant_config = None
     if not args.no_4bit:
         quant_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype="bfloat16",
+            bnb_4bit_compute_dtype=compute_dtype,
             bnb_4bit_use_double_quant=True,
         )
 
@@ -97,7 +103,8 @@ def main() -> None:
         logging_steps=10,
         eval_strategy="epoch",
         save_strategy="epoch",
-        bf16=True,
+        bf16=use_bf16,
+        fp16=not use_bf16,
         report_to=["wandb"],
     )
 

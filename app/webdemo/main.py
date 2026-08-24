@@ -44,8 +44,13 @@ def _load_model():
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
+    # bf16 needs Ampere+ (compute capability 8.0+) - older cards like a T4
+    # only support fp16, so detect instead of assuming
+    use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+    dtype = torch.bfloat16 if use_bf16 else torch.float16
+
     _tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
-    _model = AutoModelForCausalLM.from_pretrained(MODEL_PATH, device_map="auto", torch_dtype=torch.bfloat16)
+    _model = AutoModelForCausalLM.from_pretrained(MODEL_PATH, device_map="auto", torch_dtype=dtype)
 
 
 class ExtractRequest(BaseModel):
