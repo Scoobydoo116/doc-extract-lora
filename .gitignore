@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# data
+data/raw/
+data/interim/
+data/processed/
+*.sqlite
+*.db
+
+# training artifacts
+checkpoints/
+runs/
+wandb/
+*.gguf
+*.safetensors
+*.bin
+
+# env
+.env
+.DS_Store

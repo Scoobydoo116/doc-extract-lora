@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>doc-extract-lora demo</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+  textarea { width: 100%; height: 200px; font-family: monospace; font-size: 0.9rem; }
+  pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; border-radius: 6px; }
+  button { padding: 0.5rem 1.5rem; font-size: 1rem; cursor: pointer; }
+  .row { display: flex; gap: 1rem; margin-top: 1rem; }
+  .col { flex: 1; }
+  h2 { font-size: 1rem; color: #555; }
+</style>
+</head>
+<body>
+  <h1>doc-extract-lora</h1>
+  <p>Paste raw receipt/invoice text and extract structured JSON with the fine-tuned model.</p>
+  <textarea id="input" placeholder="Paste receipt text here...">Coffee Shop Inc.
+123 Main St
+Date: 2026-03-14
+
+1 Latte           4.50
+2 Croissant       3.00  6.00
+
+Subtotal: 10.50
+Tax: 0.90
+Total: 11.40</textarea>
+  <div>
+    <button id="run">Extract</button>
+  </div>
+  <div class="row">
+    <div class="col">
+      <h2>Raw model output</h2>
+      <pre id="raw"></pre>
+    </div>
+    <div class="col">
+      <h2>Parsed JSON</h2>
+      <pre id="parsed"></pre>
+    </div>
+  </div>
+
+<script>
+document.getElementById('run').addEventListener('click', async () => {
+  const text = document.getElementById('input').value;
+  document.getElementById('raw').textContent = 'running...';
+  document.getElementById('parsed').textContent = '';
+  try {
+    const res = await fetch('/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      document.getElementById('raw').textContent = 'Error: ' + (data.detail || res.statusText);
+      return;
+    }
+    document.getElementById('raw').textContent = data.raw_output;
+    document.getElementById('parsed').textContent = data.parsed
+      ? JSON.stringify(data.parsed, null, 2)
+      : '(failed to parse as JSON)';
+  } catch (err) {
+    document.getElementById('raw').textContent = 'Request failed: ' + err;
+  }
+});
+</script>
+</body>
+</html>
