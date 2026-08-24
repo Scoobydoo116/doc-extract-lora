@@ -54,9 +54,10 @@ Raw document text (OCR output or plain text)
 data/           dataset sourcing + preprocessing (receipts/invoices -> instruction format)
 training/       LoRA/QLoRA fine-tuning scripts
 eval/           field-level accuracy + JSON-validity evaluation harness
-scripts/        one-off utility scripts (data prep, quantization/export)
+scripts/        one-off utility scripts (data fetch/convert, adapter merge/export)
 app/webdemo/    FastAPI backend + minimal frontend for the live demo
-notebooks/      exploratory notebooks (data inspection, error analysis)
+notebooks/      self-contained Colab notebook for baseline eval + fine-tuning
+tests/          pytest suite for schema validation, eval metrics, and data conversion
 ```
 
 ## Data
@@ -80,10 +81,11 @@ CORD and SROIE (the two standard receipt-parsing benchmarks) were the original p
 - [ ] Get a baseline number: run the *base* model (zero-shot / few-shot prompted) through the eval harness - needs GPU access (Colab/RunPod/Lambda) or an API key, not available in this environment
 
 **Phase 2 - Fine-tuning (weeks 3-6)**
-- [ ] Pick base model (candidate: Qwen2.5 1.5B/3B or Llama-3.2-3B — small enough to run on consumer/cloud GPU and to quantize for edge later)
-- [ ] LoRA/QLoRA fine-tune on the training split
+- [x] Pick base model (Qwen2.5-1.5B-Instruct by default in the notebook - fits a free-tier T4 with QLoRA; swap to 3B on a bigger GPU)
+- [x] Build a ready-to-run notebook for baseline eval + LoRA/QLoRA fine-tuning (`notebooks/finetune_doc_extract.ipynb`) - **run this next**, it's the blocking step for everything below
 - [ ] Track experiments (learning rate, rank, epochs) with W&B
 - [ ] Re-run eval harness on fine-tuned checkpoint, compare to baseline
+- [x] Merge/export script for turning a trained adapter into a standalone deployable model (`scripts/merge_and_export.py`)
 
 **Phase 3 - Benchmarking (weeks 6-7)**
 - [ ] Add a large hosted model (e.g. GPT-4o-class or Claude) as the "ceiling" comparison point
@@ -102,14 +104,17 @@ CORD and SROIE (the two standard receipt-parsing benchmarks) were the original p
 
 ## Status
 
-Scaffolding stage - no training run yet. See `training/train_lora.py` and `eval/evaluate.py` for the current stubs.
+Data pipeline is real and verified (403 examples, fetched/converted/tested against the live source). No training run yet - that happens in `notebooks/finetune_doc_extract.ipynb`, which needs a GPU this environment doesn't have. Once that produces an adapter, `scripts/merge_and_export.py` turns it into a model the eval harness and demo can load directly.
+
+The deterministic logic (schema validation, eval metrics, data conversion) has a pytest suite (`tests/`, 35 tests) that runs in CI on every push (`.github/workflows/tests.yml`) - this is the code that's easy to get subtly wrong (number parsing, JSON extraction, line-item matching) and easy to test without a GPU, so it's tested now rather than left until something looks wrong during training.
 
 ## Setup
 
 ```bash
 python -m venv .venv
 .venv\Scripts\activate   # Windows
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # includes pytest; use requirements.txt for runtime-only
+pytest tests/ -v
 ```
 
-GPU note: LoRA fine-tuning of a 1.5-3B model is feasible on a single consumer GPU (12GB+ VRAM) with QLoRA, or on a cloud GPU (Colab Pro, RunPod, Lambda) if you don't have one locally.
+GPU note: LoRA fine-tuning of a 1.5-3B model is feasible on a single consumer GPU (12GB+ VRAM) with QLoRA, or on a cloud GPU (Colab Pro, RunPod, Lambda) if you don't have one locally - or just use the Colab notebook, which needs nothing installed locally.
