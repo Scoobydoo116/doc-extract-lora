@@ -11,6 +11,7 @@ Two things get measured, deliberately kept separate:
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -41,11 +42,29 @@ def scalar_field_match(gold: dict, pred: dict) -> dict[str, bool]:
     return {f: gold.get(f) == pred.get(f) for f in FIELDS}
 
 
+def _coerce_amount(value: Any) -> float:
+    """Best-effort numeric coercion for a predicted line-item amount.
+
+    Gold amounts are always clean floats (enforced by the schema), but a
+    model - especially an un-fine-tuned base model with no reason to follow
+    our exact schema - may emit currency-formatted strings like "$2,620.00".
+    A malformed/unparseable amount should count as a scoring miss, not
+    crash the whole eval run.
+    """
+    if isinstance(value, (int, float)):
+        return float(value)
+    digits = re.sub(r"[^0-9.\-]", "", str(value))
+    try:
+        return float(digits) if digits not in ("", "-", ".", "-.") else 0.0
+    except ValueError:
+        return 0.0
+
+
 def line_items_prf(gold_items: list[dict], pred_items: list[dict]) -> dict[str, float]:
     def key(item: dict) -> tuple:
         return (
             str(item.get("description", "")).strip().lower(),
-            round(float(item.get("amount", 0) or 0), 2),
+            round(_coerce_amount(item.get("amount", 0)), 2),
         )
 
     gold_keys = [key(i) for i in gold_items]

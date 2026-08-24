@@ -70,6 +70,22 @@ def test_line_items_prf_extra_hallucinated_item():
     assert result["precision"] < 1.0
 
 
+def test_line_items_prf_handles_currency_formatted_amount():
+    # a base model with no reason to follow our schema may emit "amount" as
+    # a currency-formatted string instead of a plain number - this must not
+    # crash the eval run, just fail to match
+    pred = [{"description": "Latte", "quantity": 1, "unit_price": 4.5, "amount": "$4.50"}]
+    result = line_items_prf(GOLD["line_items"], pred)
+    assert result["precision"] == 1.0  # "$4.50" coerces to 4.5, matches gold
+    assert result["recall"] == 0.5
+
+
+def test_line_items_prf_handles_unparseable_amount():
+    pred = [{"description": "Latte", "quantity": 1, "unit_price": 4.5, "amount": "N/A"}]
+    result = line_items_prf(GOLD["line_items"], pred)  # must not raise
+    assert result["precision"] == 0.0
+
+
 def test_line_items_prf_both_empty_is_perfect():
     result = line_items_prf([], [])
     assert result["precision"] == 1.0
