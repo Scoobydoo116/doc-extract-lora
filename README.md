@@ -104,9 +104,22 @@ CORD and SROIE (the two standard receipt-parsing benchmarks) were the original p
 
 ## Status
 
-Data pipeline is real and verified (403 examples, fetched/converted/tested against the live source). No training run yet - that happens in `notebooks/finetune_doc_extract.ipynb`, which needs a GPU this environment doesn't have. Once that produces an adapter, `scripts/merge_and_export.py` turns it into a model the eval harness and demo can load directly.
+Data pipeline is real and verified (403 examples, fetched/converted/tested against the live source). No successful training run yet - that happens in `notebooks/finetune_doc_extract.ipynb`, which needs a GPU this environment doesn't have. Once that produces an adapter, `scripts/merge_and_export.py` turns it into a model the eval harness and demo can load directly.
 
-The deterministic logic (schema validation, eval metrics, data conversion) has a pytest suite (`tests/`, 35 tests) that runs in CI on every push (`.github/workflows/tests.yml`) - this is the code that's easy to get subtly wrong (number parsing, JSON extraction, line-item matching) and easy to test without a GPU, so it's tested now rather than left until something looks wrong during training.
+The deterministic logic (schema validation, eval metrics, data conversion) has a pytest suite (`tests/`, 37 tests) that runs in CI on every push (`.github/workflows/tests.yml`) - this is the code that's easy to get subtly wrong (number parsing, JSON extraction, line-item matching) and easy to test without a GPU, so it's tested now rather than left until something looks wrong during training.
+
+### Resume point (paused mid-debugging session)
+
+Working through the Colab notebook has hit a chain of library-version-drift errors, each fixed as it surfaced (the notebook's `pip install -U` always grabs latest `trl`/`transformers`/`peft`, and their APIs have moved since this was written):
+
+1. `line_items_prf` crashed when the base model emitted a currency-formatted `"amount"` like `"$2,620.00"` instead of a plain number - fixed with lenient coercion (`eval/metrics.py`)
+2. `SFTConfig.__init__()` no longer accepts `max_seq_length` - renamed to `max_length` (`training/train_lora.py`, notebook)
+3. `bf16=True` was hardcoded, but free-tier Colab's T4 GPU (Turing, compute capability 7.5) doesn't support bf16 - only Ampere+ (8.0+) does. Fixed to auto-detect via `torch.cuda.is_bf16_supported()` and fall back to fp16 (four files: notebook, `train_lora.py`, `eval/evaluate.py`, `app/webdemo/main.py`)
+4. `SFTTrainer` raised `ValueError: A formatting function was provided while completion_only_loss=True` - current trl auto-detects our `{"prompt","completion"}` dataset shape and enables completion-only-loss masking, which is incompatible with a `formatting_func`. Fixed by dropping `formatting_func` entirely (verified locally end-to-end with a tiny CPU model before pushing)
+
+**As of the last session, after fix #4 was pushed (commit `a043093`), running the notebook again still failed** - but the new error traceback wasn't captured before the session ended. **Next step: reload the notebook in Colab, run it again, and paste whatever error appears now** so it can be diagnosed - don't assume it's another version-drift issue without seeing the actual traceback first, and don't re-apply fixes 1-4 again, they're already in `master`.
+
+If the same instructions/context aren't available next session: the notebook is self-contained and only needs the actual error text pasted back to continue debugging. Each fix so far has been small and mechanical (renamed/removed kwargs, a hardware capability check) - the underlying pipeline and approach are sound, this is just fast-moving-library friction, not a design problem.
 
 ## Setup
 
