@@ -46,10 +46,6 @@ def parse_args() -> argparse.Namespace:
     return ap.parse_args()
 
 
-def formatting_func(example: dict) -> str:
-    return example["prompt"] + " " + example["completion"]
-
-
 def main() -> None:
     args = parse_args()
 
@@ -92,6 +88,9 @@ def main() -> None:
 
     train_ds = load_dataset("json", data_files=args.train_file, split="train")
     val_ds = load_dataset("json", data_files=args.val_file, split="train")
+    # each example is already {"prompt": ..., "completion": ...} - trl
+    # recognizes this shape as its "prompt-completion" dataset format and
+    # automatically masks the loss to the completion tokens only
 
     sft_config = SFTConfig(
         output_dir=args.output_dir,
@@ -113,7 +112,6 @@ def main() -> None:
         args=sft_config,
         train_dataset=train_ds,
         eval_dataset=val_ds,
-        formatting_func=formatting_func,
     )
     trainer.train()
     trainer.save_model(args.output_dir)
