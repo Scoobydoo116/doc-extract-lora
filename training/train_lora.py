@@ -79,7 +79,7 @@ def main() -> None:
         device_map="auto",
     )
     if quant_config is not None:
-        model = prepare_model_for_kbit_training(model)
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
 
     lora_config = LoraConfig(
         r=args.lora_r,
@@ -111,6 +111,12 @@ def main() -> None:
         bf16=use_bf16,
         fp16=not use_bf16,
         report_to=["wandb"],
+        # gradient checkpointing's interaction with bitsandbytes 4-bit layers
+        # is a known source of "different number of tensors saved" errors
+        # during backward recomputation. A 1.5-3B model in 4-bit with a
+        # modest batch size doesn't need the memory savings badly enough to
+        # be worth debugging that - disable it rather than fight it.
+        gradient_checkpointing=False,
     )
 
     trainer = SFTTrainer(
