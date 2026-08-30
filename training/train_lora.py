@@ -41,7 +41,13 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--lora-dropout", type=float, default=0.05)
     ap.add_argument("--per-device-batch-size", type=int, default=4)
     ap.add_argument("--grad-accum", type=int, default=4)
-    ap.add_argument("--max-seq-len", type=int, default=1024)
+    ap.add_argument(
+        "--max-seq-len",
+        type=int,
+        default=1280,
+        help="measured on the actual training data: median 721 tokens, p90 1039, max 1233 - "
+        "1024 truncates the completion (which comes after the prompt) on the longer ~10%% of examples",
+    )
     ap.add_argument("--no-4bit", action="store_true", help="disable QLoRA 4-bit quantization")
     return ap.parse_args()
 
