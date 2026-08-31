@@ -16,6 +16,12 @@ you don't have a local GPU.
 """
 
 import argparse
+import gc
+import os
+
+# reduces allocator fragmentation on memory-constrained GPUs - must be set
+# before torch initializes a CUDA context
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import torch
 from datasets import load_dataset
@@ -84,7 +90,14 @@ def main() -> None:
         device_map="auto",
     )
     if quant_config is not None:
-        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
+        model = prepare_model_for_kbit_training(
+            model,
+            use_gradient_checkpointing=True,
+            # the reentrant (default) checkpoint implementation is a known
+            # source of "different number of tensors saved" errors with
+            # 4-bit quantized layers - non-reentrant avoids it
+            gradient_checkpointing_kwargs={"use_reentrant": False},
+        )
 
     lora_config = LoraConfig(
         r=args.lora_r,
@@ -120,13 +133,15 @@ def main() -> None:
         bf16=use_bf16,
         fp16=not use_bf16,
         report_to=["wandb"],
-        # gradient checkpointing's interaction with bitsandbytes 4-bit layers
-        # is a known source of "different number of tensors saved" errors
-        # during backward recomputation. A 1.5-3B model in 4-bit with a
-        # modest batch size doesn't need the memory savings badly enough to
-        # be worth debugging that - disable it rather than fight it.
-        gradient_checkpointing=False,
+        # must match the use_reentrant=False passed to prepare_model_for_kbit_training
+        # above - trl re-applies gradient checkpointing via this config, so both
+        # need to agree or one silently overrides the other
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
     )
+
+    gc.collect()
+    torch.cuda.empty_cache()
 
     trainer = SFTTrainer(
         model=model,
