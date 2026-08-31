@@ -39,8 +39,13 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--lora-r", type=int, default=16)
     ap.add_argument("--lora-alpha", type=int, default=32)
     ap.add_argument("--lora-dropout", type=float, default=0.05)
-    ap.add_argument("--per-device-batch-size", type=int, default=4)
-    ap.add_argument("--grad-accum", type=int, default=4)
+    ap.add_argument(
+        "--per-device-batch-size",
+        type=int,
+        default=2,
+        help="without gradient checkpointing, a T4's ~14.5GB gets tight around batch_size=4 at max_length=1280",
+    )
+    ap.add_argument("--grad-accum", type=int, default=8, help="paired with the lower default batch size to keep the same effective batch size (16)")
     ap.add_argument(
         "--max-seq-len",
         type=int,
@@ -103,6 +108,10 @@ def main() -> None:
         num_train_epochs=args.epochs,
         learning_rate=args.lr,
         per_device_train_batch_size=args.per_device_batch_size,
+        # trl defaults this to 8 independently of the train batch size, which
+        # can push a tight-fitting training config over the edge during the
+        # end-of-epoch eval pass
+        per_device_eval_batch_size=args.per_device_batch_size,
         gradient_accumulation_steps=args.grad_accum,
         max_length=args.max_seq_len,
         logging_steps=10,
