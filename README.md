@@ -108,18 +108,22 @@ Data pipeline is real and verified (403 examples, fetched/converted/tested again
 
 The deterministic logic (schema validation, eval metrics, data conversion) has a pytest suite (`tests/`, 37 tests) that runs in CI on every push (`.github/workflows/tests.yml`) - this is the code that's easy to get subtly wrong (number parsing, JSON extraction, line-item matching) and easy to test without a GPU, so it's tested now rather than left until something looks wrong during training.
 
-### Resume point (paused mid-debugging session)
+### Resume point (paused mid-debugging session, day 2)
 
-Working through the Colab notebook has hit a chain of library-version-drift errors, each fixed as it surfaced (the notebook's `pip install -U` always grabs latest `trl`/`transformers`/`peft`, and their APIs have moved since this was written):
+Working through the Colab notebook has hit a chain of errors, each fixed as it surfaced (the notebook's `pip install -U` always grabs latest `trl`/`transformers`/`peft`, and their APIs have moved since this was written). In order:
 
-1. `line_items_prf` crashed when the base model emitted a currency-formatted `"amount"` like `"$2,620.00"` instead of a plain number - fixed with lenient coercion (`eval/metrics.py`)
-2. `SFTConfig.__init__()` no longer accepts `max_seq_length` - renamed to `max_length` (`training/train_lora.py`, notebook)
-3. `bf16=True` was hardcoded, but free-tier Colab's T4 GPU (Turing, compute capability 7.5) doesn't support bf16 - only Ampere+ (8.0+) does. Fixed to auto-detect via `torch.cuda.is_bf16_supported()` and fall back to fp16 (four files: notebook, `train_lora.py`, `eval/evaluate.py`, `app/webdemo/main.py`)
-4. `SFTTrainer` raised `ValueError: A formatting function was provided while completion_only_loss=True` - current trl auto-detects our `{"prompt","completion"}` dataset shape and enables completion-only-loss masking, which is incompatible with a `formatting_func`. Fixed by dropping `formatting_func` entirely (verified locally end-to-end with a tiny CPU model before pushing)
+1. `line_items_prf` crashed on a currency-formatted `"amount"` like `"$2,620.00"` from the base model - fixed with lenient coercion (`eval/metrics.py`)
+2. `SFTConfig.__init__()` no longer accepts `max_seq_length` - renamed to `max_length`
+3. `bf16=True` was hardcoded, but free-tier Colab's T4 (Turing, 7.5) doesn't support it - only Ampere+ (8.0+) does. Fixed to auto-detect via `torch.cuda.is_bf16_supported()`
+4. `SFTTrainer` rejected `formatting_func` once trl auto-detected our `{"prompt","completion"}` dataset shape as its native prompt-completion format - fixed by dropping `formatting_func` entirely
+5. Measured actual token lengths in the data (median 721, p90 1039, max 1233) and found `max_length=1024` was silently truncating completions on the longest ~10% of examples - bumped to 1280. Also reduced to 1 epoch for a faster first validation pass.
+6. `CheckpointError: different number of tensors saved during forward and recomputation` - a known gradient-checkpointing + bitsandbytes-4-bit interaction. **First attempt (wrong call): disabled gradient checkpointing entirely** to dodge it.
+7. That caused a genuine `OutOfMemoryError` (T4's ~14.5GB, short by only 112MB). Tried lowering batch sizes (train 4→2, and setting `per_device_eval_batch_size` which had defaulted to 8, independent of train batch size) - **same OOM recurred with byte-for-byte identical numbers**, which strongly suggested the fix was never actually picked up by the live Colab session (stale notebook state), not that the fix was wrong.
+8. Rather than keep guessing one variable at a time - the user was reasonably frustrated after 3 days on this - fix #6 was corrected properly instead of avoided: `gradient_checkpointing_kwargs={"use_reentrant": False}` (the actual documented fix), **and** the notebook's default model was switched from Qwen2.5-1.5B-Instruct to **Qwen2.5-0.5B-Instruct** for this validation pass (roughly a third the memory, makes OOM unlikely regardless of the checkpointing question). Also added `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` and an explicit memory clear before training.
 
-**As of the last session, after fix #4 was pushed (commit `a043093`), running the notebook again still failed** - but the new error traceback wasn't captured before the session ended. **Next step: reload the notebook in Colab, run it again, and paste whatever error appears now** so it can be diagnosed - don't assume it's another version-drift issue without seeing the actual traceback first, and don't re-apply fixes 1-4 again, they're already in `master`.
+**Commit `5f5a15c` has all of this. It has not been confirmed working yet** - the session ended before the user re-ran it. Verification limit to be upfront about: 4-bit quantization needs real CUDA/bitsandbytes kernels not available in this dev environment, so none of the gradient-checkpointing or OOM fixes could be verified beyond "the code runs and uses the right API" - only a real T4 run confirms the actual memory behavor.
 
-If the same instructions/context aren't available next session: the notebook is self-contained and only needs the actual error text pasted back to continue debugging. Each fix so far has been small and mechanical (renamed/removed kwargs, a hardware capability check) - the underlying pipeline and approach are sound, this is just fast-moving-library friction, not a design problem.
+**Next step:** have the user do a **full restart** (`Runtime → Restart session`, then `File → Revert notebook` or reopen the notebook link fresh - a prior round was wasted because the live session didn't actually have the latest code) and run it again. Get the actual result (success, or a new traceback) before changing anything else. If it OOMs again even at 0.5B, something structural needs rethinking (e.g. batch_size=1, or moving off T4 to Colab Pro) rather than another small parameter tweak - three OOM/checkpoint round trips on the same cell is a signal to step back, not keep iterating narrowly.
 
 ## Setup
 
